@@ -229,6 +229,100 @@ export async function registerRoutes(app: Express): Promise<Server> {
     res.json(categories);
   });
 
+  // Dashboard data API endpoint
+  app.get("/api/dashboard", async (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    try {
+      const userId = req.user!.id;
+      
+      // Get all transactions
+      const transactions = await storage.getTransactions(userId);
+      
+      // Get all savings goals
+      const savingsGoals = await storage.getSavingsGoals(userId);
+      
+      // Calculate total income and expenses
+      const totalIncome = transactions
+        .filter(t => t.type === "income")
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+        
+      const totalExpenses = transactions
+        .filter(t => t.type === "expense")
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+        
+      // Calculate net balance
+      const netBalance = totalIncome - totalExpenses;
+
+      // Get recent transactions (last 5)
+      const recentTransactions = [...transactions]
+        .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime())
+        .slice(0, 5);
+
+      // Calculate month-over-month change
+      const today = new Date();
+      const currentMonth = today.getMonth();
+      const currentYear = today.getFullYear();
+      const lastMonth = currentMonth === 0 ? 11 : currentMonth - 1;
+      const lastMonthYear = currentMonth === 0 ? currentYear - 1 : currentYear;
+      
+      const currentMonthTransactions = transactions.filter(t => {
+        const date = new Date(t.date);
+        return date.getMonth() === currentMonth && date.getFullYear() === currentYear;
+      });
+      
+      const lastMonthTransactions = transactions.filter(t => {
+        const date = new Date(t.date);
+        return date.getMonth() === lastMonth && date.getFullYear() === lastMonthYear;
+      });
+      
+      const currentMonthIncome = currentMonthTransactions
+        .filter(t => t.type === "income")
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+        
+      const currentMonthExpenses = currentMonthTransactions
+        .filter(t => t.type === "expense")
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+        
+      const lastMonthIncome = lastMonthTransactions
+        .filter(t => t.type === "income")
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+        
+      const lastMonthExpenses = lastMonthTransactions
+        .filter(t => t.type === "expense")
+        .reduce((sum, t) => sum + Number(t.amount), 0);
+      
+      // Calculate percent changes
+      const incomeChange = lastMonthIncome === 0 
+        ? 100 
+        : Math.round(((currentMonthIncome - lastMonthIncome) / lastMonthIncome) * 100);
+        
+      const expenseChange = lastMonthExpenses === 0 
+        ? 100 
+        : Math.round(((currentMonthExpenses - lastMonthExpenses) / lastMonthExpenses) * 100);
+        
+      const savingsRate = totalIncome === 0 
+        ? 0 
+        : Math.round(((totalIncome - totalExpenses) / totalIncome) * 100);
+
+      res.json({
+        summary: {
+          totalIncome,
+          totalExpenses,
+          netBalance,
+          savingsRate,
+          incomeChange,
+          expenseChange
+        },
+        recentTransactions,
+        savingsGoals,
+        transactions
+      });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch dashboard data" });
+    }
+  });
+
   const httpServer = createServer(app);
 
   return httpServer;

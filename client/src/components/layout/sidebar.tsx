@@ -45,20 +45,22 @@ export default function Sidebar() {
       
       <nav className="flex-1 px-4 py-5 space-y-1 overflow-y-auto">
         {navItems.map(item => (
-          <Link key={item.path} href={item.path}>
-            <a
-              className={cn(
-                "flex items-center w-full px-4 py-3 text-sm font-medium rounded-md transition-colors",
-                location === item.path
-                  ? "bg-primary-50 text-primary-700"
-                  : "text-gray-600 hover:bg-gray-50"
-              )}
-              onClick={() => setSidebarOpen(false)}
-            >
-              <i className={`${item.icon} text-xl mr-3`}></i>
-              {item.label}
-            </a>
-          </Link>
+          <div key={item.path}>
+            <Link href={item.path}>
+              <div
+                className={cn(
+                  "flex items-center w-full px-4 py-3 text-sm font-medium rounded-md transition-colors cursor-pointer",
+                  location === item.path
+                    ? "bg-primary-50 text-primary-700"
+                    : "text-gray-600 hover:bg-gray-50"
+                )}
+                onClick={() => setSidebarOpen(false)}
+              >
+                <i className={`${item.icon} text-xl mr-3`}></i>
+                {item.label}
+              </div>
+            </Link>
+          </div>
         ))}
       </nav>
       
