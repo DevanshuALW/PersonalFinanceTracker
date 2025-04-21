@@ -7,6 +7,7 @@ import NotFound from "@/pages/not-found";
 import Dashboard from "@/pages/dashboard";
 import Transactions from "@/pages/transactions";
 import Savings from "@/pages/savings";
+import LinkedAccounts from "@/pages/linked-accounts";
 import AuthPage from "@/pages/auth-page";
 import { ProtectedRoute } from "./lib/protected-route";
 import Sidebar from "@/components/layout/sidebar";
@@ -26,6 +27,7 @@ function Router() {
                 <ProtectedRoute path="/" component={Dashboard} />
                 <ProtectedRoute path="/transactions" component={Transactions} />
                 <ProtectedRoute path="/savings" component={Savings} />
+                <ProtectedRoute path="/linked-accounts" component={LinkedAccounts} />
                 <Route component={NotFound} />
               </Switch>
             </main>

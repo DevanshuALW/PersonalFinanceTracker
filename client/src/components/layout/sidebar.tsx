@@ -19,6 +19,7 @@ export default function Sidebar() {
     { path: "/", label: "Dashboard", icon: "ri-dashboard-line" },
     { path: "/transactions", label: "Transactions", icon: "ri-exchange-dollar-line" },
     { path: "/savings", label: "Savings Goals", icon: "ri-money-dollar-box-line" },
+    { path: "/linked-accounts", label: "Linked Accounts", icon: "ri-bank-line" },
   ];
 
   return (
