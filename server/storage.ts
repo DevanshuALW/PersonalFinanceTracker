@@ -1,8 +1,13 @@
 import { users, transactions, savingsGoals, categories, type User, type InsertUser, type Transaction, type InsertTransaction, type SavingsGoal, type InsertSavingsGoal, type Category, type InsertCategory } from "@shared/schema";
 import session from "express-session";
+import connectPg from "connect-pg-simple";
+import { db } from "./db";
+import { eq, and, desc, sql } from "drizzle-orm";
+import { pool } from "./db";
 import createMemoryStore from "memorystore";
 
 const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   // User operations
@@ -34,41 +39,30 @@ export interface IStorage {
   createCategory(category: InsertCategory): Promise<Category>;
   
   // Session store
-  sessionStore: session.SessionStore;
+  sessionStore: any;
 }
 
-export class MemStorage implements IStorage {
-  private users: Map<number, User>;
-  private transactions: Map<number, Transaction>;
-  private savingsGoals: Map<number, SavingsGoal>;
-  private categories: Map<number, Category>;
-  
-  userCurrentId: number;
-  transactionCurrentId: number;
-  savingsGoalCurrentId: number;
-  categoryCurrentId: number;
-  sessionStore: session.SessionStore;
+export class DatabaseStorage implements IStorage {
+  sessionStore: any;
 
   constructor() {
-    this.users = new Map();
-    this.transactions = new Map();
-    this.savingsGoals = new Map();
-    this.categories = new Map();
-    
-    this.userCurrentId = 1;
-    this.transactionCurrentId = 1;
-    this.savingsGoalCurrentId = 1;
-    this.categoryCurrentId = 1;
-    
-    this.sessionStore = new MemoryStore({
-      checkPeriod: 86400000,
+    this.sessionStore = new PostgresSessionStore({ 
+      pool, 
+      createTableIfMissing: true 
     });
     
     // Initialize default categories
     this.initializeDefaultCategories();
   }
   
-  private initializeDefaultCategories() {
+  private async initializeDefaultCategories() {
+    const existingCategories = await this.getCategories();
+    
+    // Only initialize if there are no categories
+    if (existingCategories.length > 0) {
+      return;
+    }
+    
     const defaultCategories: InsertCategory[] = [
       { name: "Housing", icon: "ri-home-4-line", color: "#a78bfa", isDefault: true, type: "expense" },
       { name: "Food", icon: "ri-shopping-basket-2-line", color: "#3b82f6", isDefault: true, type: "expense" },
@@ -85,161 +79,160 @@ export class MemStorage implements IStorage {
     ];
     
     for (const category of defaultCategories) {
-      this.createCategory(category);
+      await this.createCategory(category);
     }
   }
 
   // User operations
   async getUser(id: number): Promise<User | undefined> {
-    return this.users.get(id);
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
   }
 
   async getUserByUsername(username: string): Promise<User | undefined> {
-    return Array.from(this.users.values()).find(
-      (user) => user.username === username,
-    );
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
   }
 
   async createUser(insertUser: InsertUser): Promise<User> {
-    const id = this.userCurrentId++;
-    const user: User = { ...insertUser, id };
-    this.users.set(id, user);
+    const [user] = await db.insert(users).values(insertUser).returning();
     return user;
   }
   
   // Transaction operations
   async getTransactions(userId: number): Promise<Transaction[]> {
-    return Array.from(this.transactions.values()).filter(
-      (transaction) => transaction.userId === userId,
-    ).sort((a, b) => {
-      // Sort by date in descending order (newest first)
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+    return db.select()
+      .from(transactions)
+      .where(eq(transactions.userId, userId))
+      .orderBy(desc(transactions.date));
   }
   
   async getTransactionsByType(userId: number, type: string): Promise<Transaction[]> {
-    return Array.from(this.transactions.values()).filter(
-      (transaction) => transaction.userId === userId && transaction.type === type,
-    ).sort((a, b) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+    return db.select()
+      .from(transactions)
+      .where(and(
+        eq(transactions.userId, userId),
+        eq(transactions.type, type)
+      ))
+      .orderBy(desc(transactions.date));
   }
   
   async getTransactionsByCategory(userId: number, category: string): Promise<Transaction[]> {
-    return Array.from(this.transactions.values()).filter(
-      (transaction) => transaction.userId === userId && transaction.category === category,
-    ).sort((a, b) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+    return db.select()
+      .from(transactions)
+      .where(and(
+        eq(transactions.userId, userId),
+        eq(transactions.category, category)
+      ))
+      .orderBy(desc(transactions.date));
   }
   
   async getTransactionsByDateRange(userId: number, startDate: Date, endDate: Date): Promise<Transaction[]> {
-    return Array.from(this.transactions.values()).filter(
-      (transaction) => {
-        const transactionDate = new Date(transaction.date);
-        return transaction.userId === userId && 
-          transactionDate >= startDate && 
-          transactionDate <= endDate;
-      }
-    ).sort((a, b) => {
-      return new Date(b.date).getTime() - new Date(a.date).getTime();
-    });
+    return db.select()
+      .from(transactions)
+      .where(and(
+        eq(transactions.userId, userId),
+        sql`${transactions.date} >= ${startDate.toISOString()}`,
+        sql`${transactions.date} <= ${endDate.toISOString()}`
+      ))
+      .orderBy(desc(transactions.date));
   }
   
   async getTransaction(id: number): Promise<Transaction | undefined> {
-    return this.transactions.get(id);
+    const [transaction] = await db.select()
+      .from(transactions)
+      .where(eq(transactions.id, id));
+    return transaction;
   }
   
   async createTransaction(transaction: InsertTransaction): Promise<Transaction> {
-    const id = this.transactionCurrentId++;
-    const newTransaction: Transaction = { 
-      ...transaction, 
-      id,
-      createdAt: new Date()
-    };
-    this.transactions.set(id, newTransaction);
+    const [newTransaction] = await db.insert(transactions)
+      .values({
+        ...transaction,
+        createdAt: new Date()
+      })
+      .returning();
     return newTransaction;
   }
   
   async updateTransaction(id: number, transaction: Partial<InsertTransaction>): Promise<Transaction | undefined> {
-    const existingTransaction = this.transactions.get(id);
-    
-    if (!existingTransaction) return undefined;
-    
-    const updatedTransaction: Transaction = {
-      ...existingTransaction,
-      ...transaction,
-    };
-    
-    this.transactions.set(id, updatedTransaction);
+    const [updatedTransaction] = await db.update(transactions)
+      .set(transaction)
+      .where(eq(transactions.id, id))
+      .returning();
     return updatedTransaction;
   }
   
   async deleteTransaction(id: number): Promise<boolean> {
-    return this.transactions.delete(id);
+    const deleted = await db.delete(transactions)
+      .where(eq(transactions.id, id))
+      .returning();
+    return deleted.length > 0;
   }
   
   // Savings Goal operations
   async getSavingsGoals(userId: number): Promise<SavingsGoal[]> {
-    return Array.from(this.savingsGoals.values()).filter(
-      (goal) => goal.userId === userId,
-    );
+    return db.select()
+      .from(savingsGoals)
+      .where(eq(savingsGoals.userId, userId));
   }
   
   async getSavingsGoal(id: number): Promise<SavingsGoal | undefined> {
-    return this.savingsGoals.get(id);
+    const [goal] = await db.select()
+      .from(savingsGoals)
+      .where(eq(savingsGoals.id, id));
+    return goal;
   }
   
   async createSavingsGoal(goal: InsertSavingsGoal): Promise<SavingsGoal> {
-    const id = this.savingsGoalCurrentId++;
-    const newGoal: SavingsGoal = { 
-      ...goal, 
-      id,
-      createdAt: new Date()
-    };
-    this.savingsGoals.set(id, newGoal);
+    const [newGoal] = await db.insert(savingsGoals)
+      .values({
+        ...goal,
+        createdAt: new Date()
+      })
+      .returning();
     return newGoal;
   }
   
   async updateSavingsGoal(id: number, goal: Partial<InsertSavingsGoal>): Promise<SavingsGoal | undefined> {
-    const existingGoal = this.savingsGoals.get(id);
-    
-    if (!existingGoal) return undefined;
-    
-    const updatedGoal: SavingsGoal = {
-      ...existingGoal,
-      ...goal,
-    };
-    
-    this.savingsGoals.set(id, updatedGoal);
+    const [updatedGoal] = await db.update(savingsGoals)
+      .set(goal)
+      .where(eq(savingsGoals.id, id))
+      .returning();
     return updatedGoal;
   }
   
   async deleteSavingsGoal(id: number): Promise<boolean> {
-    return this.savingsGoals.delete(id);
+    const deleted = await db.delete(savingsGoals)
+      .where(eq(savingsGoals.id, id))
+      .returning();
+    return deleted.length > 0;
   }
   
   // Category operations
   async getCategories(): Promise<Category[]> {
-    return Array.from(this.categories.values());
+    return db.select().from(categories);
   }
   
   async getCategoriesByType(type: string): Promise<Category[]> {
-    return Array.from(this.categories.values()).filter(
-      (category) => category.type === type,
-    );
+    return db.select()
+      .from(categories)
+      .where(eq(categories.type, type));
   }
   
   async getCategory(id: number): Promise<Category | undefined> {
-    return this.categories.get(id);
+    const [category] = await db.select()
+      .from(categories)
+      .where(eq(categories.id, id));
+    return category;
   }
   
   async createCategory(category: InsertCategory): Promise<Category> {
-    const id = this.categoryCurrentId++;
-    const newCategory: Category = { ...category, id };
-    this.categories.set(id, newCategory);
+    const [newCategory] = await db.insert(categories)
+      .values(category)
+      .returning();
     return newCategory;
   }
 }
 
-export const storage = new MemStorage();
+export const storage = new DatabaseStorage();
