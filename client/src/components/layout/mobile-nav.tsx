@@ -40,10 +40,12 @@ export default function MobileNav() {
           </div>
         </Link>
         
-        <button className="flex flex-col items-center justify-center px-3 py-2 text-gray-600">
-          <i className="ri-settings-4-line text-xl"></i>
-          <span className="text-xs mt-1">Settings</span>
-        </button>
+        <Link href="/linked-accounts">
+          <div className={`flex flex-col items-center justify-center px-3 py-2 ${location === "/linked-accounts" ? "text-primary-600" : "text-gray-600"}`}>
+            <i className="ri-bank-line text-xl"></i>
+            <span className="text-xs mt-1">Accounts</span>
+          </div>
+        </Link>
       </nav>
 
       {/* Transaction Modal */}

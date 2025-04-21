@@ -232,6 +232,12 @@ export async function registerRoutes(app: Express): Promise<Server> {
   });
 
   // Plaid API routes
+  // Check Plaid availability
+  app.get("/api/plaid/status", (req, res) => {
+    const available = !!(process.env.PLAID_CLIENT_ID && process.env.PLAID_SECRET);
+    res.json({ available });
+  });
+
   // Create a link token
   app.post("/api/plaid/create-link-token", async (req, res) => {
     if (!req.isAuthenticated()) return res.sendStatus(401);

@@ -6,10 +6,24 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Loader2, LinkIcon, RefreshCw } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-import { PlaidLinkOnSuccess, PlaidLinkOnExit, PlaidLinkOptions } from 'plaid';
 
-// Make sure to check that this env variable is available
-const PLAID_AVAILABLE = import.meta.env.VITE_STRIPE_PUBLIC_KEY ? true : false;
+// Define Plaid types here since they're not exported from the Plaid library
+interface PlaidLinkOnSuccess {
+  (publicToken: string, metadata: any): void;
+}
+
+interface PlaidLinkOnExit {
+  (error: any | null, metadata?: any): void;
+}
+
+interface PlaidLinkOptions {
+  token: string;
+  onSuccess: PlaidLinkOnSuccess;
+  onExit?: PlaidLinkOnExit;
+  onLoad?: () => void;
+  onEvent?: (eventName: string, metadata: any) => void;
+  receivedRedirectUri?: string;
+}
 
 interface LinkAccountProps {
   onSuccess: PlaidLinkOnSuccess;
@@ -19,7 +33,28 @@ interface LinkAccountProps {
 function LinkAccount({ onSuccess, onExit }: LinkAccountProps) {
   const [loading, setLoading] = useState(true);
   const [linkToken, setLinkToken] = useState<string | null>(null);
+  const [plaidAvailable, setPlaidAvailable] = useState(false);
   const { toast } = useToast();
+
+  // Check if Plaid is available
+  useEffect(() => {
+    async function checkPlaidAvailability() {
+      try {
+        const response = await apiRequest('GET', '/api/plaid/status');
+        const data = await response.json();
+        setPlaidAvailable(data.available);
+        if (!data.available) {
+          setLoading(false);
+        }
+      } catch (error) {
+        console.error("Error checking Plaid status:", error);
+        setPlaidAvailable(false);
+        setLoading(false);
+      }
+    }
+    
+    checkPlaidAvailability();
+  }, []);
 
   const createLinkToken = useCallback(async () => {
     try {
@@ -40,12 +75,10 @@ function LinkAccount({ onSuccess, onExit }: LinkAccountProps) {
   }, [toast]);
 
   useEffect(() => {
-    if (PLAID_AVAILABLE) {
+    if (plaidAvailable) {
       createLinkToken();
-    } else {
-      setLoading(false);
     }
-  }, [createLinkToken]);
+  }, [plaidAvailable, createLinkToken]);
 
   const handleClick = useCallback(() => {
     if (!linkToken) {
@@ -66,7 +99,7 @@ function LinkAccount({ onSuccess, onExit }: LinkAccountProps) {
       const handler = window.Plaid.create({
         token: linkToken,
         onSuccess,
-        onExit: (err) => {
+        onExit: (err: any) => {
           if (onExit) onExit(err);
         },
       } as PlaidLinkOptions);
@@ -76,7 +109,7 @@ function LinkAccount({ onSuccess, onExit }: LinkAccountProps) {
     document.body.appendChild(script);
   }, [linkToken, onSuccess, onExit, toast]);
 
-  if (!PLAID_AVAILABLE) {
+  if (!plaidAvailable) {
     return (
       <Card>
         <CardHeader>
@@ -127,6 +160,23 @@ export default function LinkedAccounts() {
   const { user } = useAuth();
   const { toast } = useToast();
   const [syncingTransactions, setSyncingTransactions] = useState(false);
+  const [plaidAvailable, setPlaidAvailable] = useState(false);
+  
+  // Check if Plaid is available
+  useEffect(() => {
+    async function checkPlaidAvailability() {
+      try {
+        const response = await apiRequest('GET', '/api/plaid/status');
+        const data = await response.json();
+        setPlaidAvailable(data.available);
+      } catch (error) {
+        console.error("Error checking Plaid status:", error);
+        setPlaidAvailable(false);
+      }
+    }
+    
+    checkPlaidAvailability();
+  }, []);
 
   const exchangeTokenMutation = useMutation({
     mutationFn: async (publicToken: string) => {
@@ -215,7 +265,7 @@ export default function LinkedAccounts() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {!PLAID_AVAILABLE ? (
+            {!plaidAvailable ? (
               <p className="text-sm text-gray-500">
                 Bank connection is not available. Contact the administrator.
               </p>
